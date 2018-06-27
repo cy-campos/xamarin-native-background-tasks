@@ -42,7 +42,7 @@ namespace TestApp.Droid
 
             await Task.Run(() => { _download(); });
         }
-
+ 
         private void _download()
         {
             // create an Android.Net.Uri
