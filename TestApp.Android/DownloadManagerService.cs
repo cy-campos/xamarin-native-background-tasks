@@ -4,50 +4,107 @@ using System.Threading.Tasks;
 using Android.App;
 using Android.Content;
 
+using System.Collections.Generic;
+
 namespace TestApp.Droid
 {
     public class DownloadManagerService
     {
+        /// <summary>
+        /// EventHandler that is invoked when the download has completed successfully
+        /// </summary>
         public event EventHandler DownloadCompletedEventHandler;
-        private void onDownloadCompleted(object sender, EventArgs e) 
+        private void onDownloadCompleted(object sender, EventArgs e) { DownloadCompletedEventHandler?.Invoke(sender, e); }
+
+        /// <summary>
+        /// EventHandler that is invoked when the download has failed
+        /// </summary>
+        public event EventHandler DownloadFailedEventHandler;
+        private void onDownloadFailed(object sender, EventArgs e) { DownloadFailedEventHandler?.Invoke(sender, e); }
+
+        // We will just comment this out for now.. it might be nice to have later, but we can just catch a DownloadCancelledException to handle a cancel request
+        /// <summary>
+        /// EventHandler that is invoked when the download is cancelled
+        /// </summary>
+        //public event EventHandler DownloadCancelledEventHandler;
+        //private void onDownloadCancelled(object sender, EventArgs e) { DownloadCancelledEventHandler?.Invoke(sender, e); }
+
+        // Broadcaster Receiver
+        private MyBroadcastReceiver downloadCompleteReceiver = new MyBroadcastReceiver();
+
+        public long TotalSizeBytes { get; set; }
+        public long TotalBytesDownloaded { get; set; }
+
+        public int PercentageDownloaded { get { return _getPercentageDownloaded(); } }
+        private int _getPercentageDownloaded()
         {
-            DownloadCompletedEventHandler?.Invoke(sender, e);
+            if (TotalSizeBytes < 1)
+                return 0;
+            else
+            {
+                return (int)(((double)TotalBytesDownloaded / (double)TotalSizeBytes) * 100);
+            }
         }
-        
-        // the address of what to download
-        public string DownloadUrlString { get; set; }
 
-        // the path to where it should be saved
-        const string DownloadPath = "";     // not implemented
 
-        public DownloadManagerService(string url = "http://mirror.cessen.com/blender.org/peach/trailer/trailer_iphone.m4v")
+        /// <summary>
+        /// The number of exceptions allowed before failure is reported
+        /// </summary>
+        /// <value>The max error limit.</value>
+        public int MaxExceptionCount
         {
-            this.DownloadUrlString = url;
+            get { return _maxExceptionCount; }
+            set { _maxExceptionCount = value; }
+        }
+        private int _maxExceptionCount = 5;
 
+        /// <summary>
+        /// The number of errors that have occurred during the download process
+        /// </summary>
+        /// <value>The error count.</value>
+        public int ExceptionCount { get { return _exceptionList.Count; } }
+
+        // The list of exceptions that have occured during the download process
+        public List<Exception> ExceptionList
+        {
+            get { return _exceptionList; }
+        }
+        private List<Exception> _exceptionList = new List<Exception>();
+
+        public DownloadManagerService()
+        {
             // Create an IntentFilter to listen for a specific broadcast; In this case, a completion event from DownloadManager
+            // Not really used right now, but could come in handy if we need to handle broadcast messages from DownloadManager
             IntentFilter downloadCompleteIntentFilter = new IntentFilter(DownloadManager.ActionDownloadComplete);
 
             // register the broadcast receiver
             Application.Context.RegisterReceiver(downloadCompleteReceiver, downloadCompleteIntentFilter);
         }
 
-        public async Task getFileFromUrl()
+        public async Task GetFileFromUrl(string url)
         {
-            //Func<Task> someTask = async () =>
-            //{
-            //    _download();
-            //};
-
-            //await someTask();
-
-            await Task.Run(() => { _download(); });
+            await GetFileFromUrl(url, null, null);
         }
- 
-        private void _download()
+
+        public async Task GetFileFromUrl(string url, Action<int> onPercentUpdate, object CancellationToken)
         {
+            await Task.Run(() => { _download(url, onPercentUpdate, CancellationToken); });
+        }
+
+        private void _download(string url, Action<int> onPercentUpdate, object CancellationToken)
+        {
+            onPercentUpdate = onPercentUpdate ?? ((obj) => { });
+
+            // handle object CancellationToken, since this can be null
+            var cancelToken = CancellationToken != null ? (CancellationToken)CancellationToken : new CancellationToken();
+
+            // check to see if cancelled first
+            if (cancelToken.IsCancellationRequested)
+                cancelToken.ThrowIfCancellationRequested();
+
             // create an Android.Net.Uri
-            var uri = Android.Net.Uri.Parse(DownloadUrlString);
-            
+            var uri = Android.Net.Uri.Parse(url);
+
             // get the downloadManager instance from Android
             var downloadManager = (DownloadManager)Android.App.Application.Context.GetSystemService(Context.DownloadService);
 
@@ -58,9 +115,6 @@ namespace TestApp.Droid
             // set a query filter to point to what we are downloading
             var query = new DownloadManager.Query();
             query.SetFilterById(downloadId);
-
-            var errorCount = 0;
-            var errorMax = 20;
 
             var isDownloading = true;
 
@@ -88,40 +142,59 @@ namespace TestApp.Droid
                         isDownloading = false;
 
                     var totalSizeIndex = result.GetColumnIndex(DownloadManager.ColumnTotalSizeBytes);
-                    var totalSize = result.GetLong(totalSizeIndex);
+                    TotalSizeBytes = result.GetLong(totalSizeIndex);
 
                     var totalDownloadedIndex = result.GetColumnIndex(DownloadManager.ColumnBytesDownloadedSoFar);
-                    var totalDownloaded = result.GetLong(totalDownloadedIndex);
+                    TotalBytesDownloaded = result.GetLong(totalDownloadedIndex);
 
-                    System.Diagnostics.Debug.WriteLine(String.Format("Status: {0} | {1}/{2}", status, totalDownloaded, totalSize));
+                    onPercentUpdate(PercentageDownloaded);
 
+                    System.Diagnostics.Debug.WriteLine(String.Format("Status: {0} | {1}% {2}/{3}", status, PercentageDownloaded, TotalBytesDownloaded, TotalSizeBytes));
+                    
+                    // Check for cancellation in loop
+                    if (cancelToken.IsCancellationRequested)
+                        cancelToken.ThrowIfCancellationRequested();
+                    
                     // Sleeping is necessary because our query requests for data seem to operate faster than the DownloadManager
                     // can respond. For example, it can take a few seconds for the DB to be ready before we query it or after 
                     // a download completes (see the catch below), thus causing SQL exceptions and other weird behavior.
                     // The sleep offers us a little more time to ensure everything is ready before we query again.
                     Thread.Sleep(1000);
                 }
+                catch (Android.Database.CursorIndexOutOfBoundsException ex)
+                {
+                    // this happens when cancelled from the DownloadManager UI
+                    if (this.PercentageDownloaded != 100)     // percentage check..just in case
+                        throw new DownloadCancelledException("Cancelled", ex, cancelToken);
+                    else
+                        throw ex;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    // this happens when cancellation is processed from within the app somewhere
+                    throw new DownloadCancelledException("Cancelled", ex, cancelToken);
+                }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine(String.Format("Error hit: {0}", ex.Message));
 
-                    errorCount++;
+                    _exceptionList.Add(ex);
 
-                    if (errorCount > errorMax)
-                        throw new Exception("Reached exception limit.", ex);
+                    if (_exceptionList.Count > MaxExceptionCount)
+                    {
+                        System.Diagnostics.Debug.WriteLine(String.Format("The max number of exceptions allowed has been reached. Allowed: {0}", _maxExceptionCount));
+                        onDownloadFailed(this, null);
+                        return;
+                    }
 
                     Thread.Sleep(5000);
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine(String.Format("Exited gracefully. Errors: {0}", errorCount));
-            
+            System.Diagnostics.Debug.WriteLine(String.Format("Exited gracefully. Errors: {0}", _exceptionList.Count));
+
             onDownloadCompleted(this, null);
-
         }
-
-        private MyBroadcastReceiver downloadCompleteReceiver = new MyBroadcastReceiver();
-        private MyBroadcastReceiver downloadStatusReceiver = new MyBroadcastReceiver();
     }
 
     public class MyBroadcastReceiver : BroadcastReceiver
@@ -130,5 +203,11 @@ namespace TestApp.Droid
         {
             System.Diagnostics.Debug.WriteLine(String.Format("MyBroadcastReceiver : OnReceive() | intent.Action: {0}", intent.Action));
         }
+    }
+
+    public class DownloadCancelledException : OperationCanceledException
+    {
+        public DownloadCancelledException(string message, Exception innerException, System.Threading.CancellationToken cancellationToken)
+         : base(message, innerException, cancellationToken) { }
     }
 }
