@@ -1,0 +1,9 @@
+TestApp/bin
+TestApp.Android/bin
+TestApp/obj
+TestApp.Android/obj
+TestApp.iOS/bin
+TestApp.iOS/obj
+.vs
+.DS_Store
+.DS_Store
