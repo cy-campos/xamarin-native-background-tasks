@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 namespace TestApp.Droid
 {
-    public class DownloadManagerService : IDownloadService
+    public class Downloader : IDownloader
     {
         /// <summary>
         /// EventHandler that is invoked when the download has completed successfully
@@ -38,12 +38,7 @@ namespace TestApp.Droid
         public int PercentageDownloaded { get { return _getPercentageDownloaded(); } }
         private int _getPercentageDownloaded()
         {
-            if (TotalSizeBytes < 1)
-                return 0;
-            else
-            {
-                return (int)(((double)TotalBytesDownloaded / (double)TotalSizeBytes) * 100);
-            }
+            return TotalSizeBytes < 1 ? 0 : (int)(((double)TotalBytesDownloaded / (double)TotalSizeBytes) * 100);
         }
 
 
@@ -71,7 +66,7 @@ namespace TestApp.Droid
         }
         private List<Exception> _exceptionList = new List<Exception>();
 
-        public DownloadManagerService()
+        public Downloader()
         {
             // Create an IntentFilter to listen for a specific broadcast; In this case, a completion event from DownloadManager
             // Not really used right now, but could come in handy if we need to handle broadcast messages from DownloadManager
@@ -92,8 +87,9 @@ namespace TestApp.Droid
         }
 
         private void _download(string url, Action<int> onPercentUpdate, object CancellationToken)
-        {
-            onPercentUpdate = onPercentUpdate ?? ((obj) => { });
+        {   
+            // set up onPercentUpdate - Action should take an integer parameter and display it somehow
+            onPercentUpdate = onPercentUpdate ?? ((percentageAsInteger) => { });
 
             // handle object CancellationToken, since this can be null
             var cancelToken = CancellationToken != null ? (CancellationToken)CancellationToken : new CancellationToken();

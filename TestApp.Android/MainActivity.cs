@@ -16,14 +16,14 @@ namespace TestApp.Droid
     [Activity(Label = "TestApp", Icon = "@mipmap/icon", Theme = "@style/MainTheme", MainLauncher = true, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation)]
     public class MainActivity : global::Xamarin.Forms.Platform.Android.FormsAppCompatActivity
     {
-        protected override void OnCreate(Bundle bundle)
+        protected override void OnCreate(Bundle savedInstanceState)
         {
             TabLayoutResource = Resource.Layout.Tabbar;
             ToolbarResource = Resource.Layout.Toolbar;
 
-            base.OnCreate(bundle);
+            base.OnCreate(savedInstanceState);
 
-            global::Xamarin.Forms.Forms.Init(this, bundle);
+            global::Xamarin.Forms.Forms.Init(this, savedInstanceState);
             LoadApplication(new App());
         }
 
@@ -32,15 +32,24 @@ namespace TestApp.Droid
             System.Diagnostics.Debug.WriteLine("MainActivity : OnStart()");
             base.OnStart();
 
+            await Task.Run(() => { test(); });
+        }
+
+        private async void test()
+        {
             // onStart, download something            
-            var dms = new DownloadManagerService();
+            var dms = new Downloader();
             dms.DownloadCompletedEventHandler += onDownloadCompleted;
 
-            //await dms.GetFileFromUrl("http://mirror.cessen.com/blender.org/peach/trailer/trailer_iphone.m4v");
+            await dms.GetFileFromUrl("http://mirror.cessen.com/blender.org/peach/trailer/trailer_iphone.m4v");
             //await dms.GetFileFromUrl("hasdfasdfa");
-            //await dms.GetFileFromUrl("http://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_480p_surround-fix.avi");
-
-
+            //await dms.GetFileFromUrl("http://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_480p_surround-fix.avi");            
+        }
+        
+        private void testDownload() 
+        {
+            var dms = new Downloader();
+        
             // test cancel token
             var cts = new CancellationTokenSource();
             var cancelToken = cts.Token;
@@ -60,7 +69,6 @@ namespace TestApp.Droid
             });
 
             Parallel.Invoke(po, a1, a2);
-            
         }
 
         private void onDownloadCompleted(object sender, EventArgs e)
