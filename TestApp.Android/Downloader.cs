@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 namespace TestApp.Droid
 {
-    public class DownloadManagerService
+    public class DownloadManagerService : IDownloadService
     {
         /// <summary>
         /// EventHandler that is invoked when the download has completed successfully

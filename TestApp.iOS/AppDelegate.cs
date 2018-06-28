@@ -28,7 +28,7 @@ namespace TestApp.iOS
             global::Xamarin.Forms.Forms.Init();
             LoadApplication(new App());
 
-            var blah = new SimpleBackgroundTransferViewController();
+            var blah = new Downloader();
             blah.Start();
 
             return base.FinishedLaunching(app, options);
